@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>年俸体系マトリクス（デモ）</title>
+<style>
+  :root {
+    --beige: #fef9c3;
+    --border: #e5e7eb;
+    --muted: #6b7280;
+    --muted-bg: #f3f4f6;
+    --fg: #111827;
+    --emerald: #059669;
+    --primary: #1f2937;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Hiragino Kaku Gothic ProN",
+      "Yu Gothic", Meiryo, sans-serif;
+    color: var(--fg);
+    background: #fafafa;
+    padding: 24px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .desc { font-size: 13px; color: var(--muted); margin: 0 0 16px; max-width: 900px; line-height: 1.6; }
+  .toolbar {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 16px;
+    margin-bottom: 12px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--muted); }
+  select, input[type="number"] {
+    height: 36px; border: 1px solid var(--border); border-radius: 6px;
+    padding: 0 10px; font-size: 14px; background: #fff;
+  }
+  input[type="number"] { width: 90px; text-align: right; }
+  button {
+    height: 32px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--primary); color: #fff; font-size: 13px; cursor: pointer;
+  }
+  button.secondary { background: #fff; color: var(--fg); }
+  button.outline { background: #fff; color: var(--fg); border-color: var(--border); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .stats { display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; color: var(--muted); margin-bottom: 12px; }
+  .amber { color: #d97706; }
+
+  .scroll {
+    overflow-x: auto;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+  table { border-collapse: separate; border-spacing: 0; font-size: 13px; white-space: nowrap; }
+  th, td { border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); padding: 8px; }
+  thead th {
+    position: sticky; top: 0; z-index: 20;
+    background: var(--muted-bg); color: var(--muted); font-size: 11px;
+  }
+  .emp-col { min-width: 96px; text-align: center; }
+  .emp-name { font-weight: 600; color: var(--fg); font-size: 13px; }
+  .emp-sub { font-size: 10px; font-weight: 400; }
+  .grayed { color: #9ca3af !important; }
+
+  /* sticky 左：月給 */
+  .col-salary { position: sticky; left: 0; z-index: 10; background: #fff; text-align: right; }
+  thead .col-salary { z-index: 30; }
+  /* sticky 右：MAX / MIN */
+  .col-max { position: sticky; right: 56px; z-index: 10; background: #fff; text-align: center; color: var(--muted);
+             border-left: 1px solid var(--border); }
+  .col-min { position: sticky; right: 0; z-index: 10; background: #fff; text-align: center; color: var(--muted);
+             border-left: 1px solid var(--border); min-width: 56px; }
+  thead .col-max, thead .col-min { z-index: 30; }
+
+  td.cell { text-align: center; height: 34px; }
+  td.band { background: var(--beige); }
+  td.clickable { cursor: pointer; }
+  td.clickable:hover { filter: brightness(.95); }
+  td.gray { background: #f3f4f6; }
+  .mark {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; border-radius: 9999px; border: 2px solid var(--fg);
+    font-weight: 700; font-size: 15px; line-height: 1;
+  }
+  .mark.confirmed { border-color: var(--emerald); color: var(--emerald); }
+
+  tfoot td { position: sticky; bottom: 0; background: #f9fafb; z-index: 10; }
+  tfoot .col-salary { z-index: 30; text-align: right; color: var(--muted); font-size: 11px; }
+  .confirmed-tag { font-size: 10px; color: var(--emerald); display: block; margin-bottom: 2px; }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  .err { color: #dc2626; font-size: 13px; margin: 6px 0; min-height: 16px; }
+</style>
+</head>
+<body>
+  <h1>年俸体系（デモ）</h1>
+  <p class="desc">
+    縦軸=考課点（63〜最下点）／左端=月給額／右端=MAX・MIN。
+    各社員の最終評価点（MAX）から MIN（=MAX−12・計13セル）までの帯から、面談で決めた考課点に〇を置いて年俸を確定します。
+    ※これはDB非依存のスタンドアロン・デモです（データはハードコード）。
+  </p>
+
+  <div class="toolbar">
+    <div class="field">
+      <label for="period">評価期間</label>
+      <select id="period"><option>2026年上期</option></select>
+    </div>
+    <div class="field">
+      <label for="dept">部門</label>
+      <select id="dept" onchange="render()">
+        <option value="">すべて</option>
+        <option value="パチンコ">パチンコ</option>
+        <option value="飲食">飲食</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="floor">最下点（考課点）</label>
+      <input type="number" id="floor" min="1" max="63" value="19" />
+    </div>
+    <button class="secondary" onclick="applyFloor()">反映</button>
+  </div>
+
+  <div class="stats" id="stats"></div>
+  <div class="err" id="err"></div>
+
+  <div class="scroll">
+    <table id="matrix"></table>
+  </div>
+
+  <p class="hint">
+    ベージュの帯（MAX〜MIN・13セル）内のセルをクリックすると〇が移動し、面談で決定した最終年俸の考課点になります。
+    「確定」で月給額が凍結され、以降は移動不可（「確定解除」で再編集）。
+  </p>
+
+<script>
+"use strict";
+
+// ===== 体系表マスタ（考課点バンド・実データ） =====
+// minScore <= 考課点 を満たす最大行を採用。考課点19以下は minScore:0 の受け皿。
+const SALARY_GRADES = [
+  { minScore: 63, rank: "AS", className: "Ⅲ", step: 5, monthlySalary: 555000 },
+  { minScore: 62, rank: "AS", className: "Ⅲ", step: 4, monthlySalary: 550000 },
+  { minScore: 61, rank: "AS", className: "Ⅲ", step: 3, monthlySalary: 545000 },
+  { minScore: 60, rank: "AS", className: "Ⅲ", step: 2, monthlySalary: 540000 },
+  { minScore: 59, rank: "AS", className: "Ⅲ", step: 1, monthlySalary: 535000 },
+  { minScore: 58, rank: "AS", className: "Ⅱ", step: 5, monthlySalary: 526000 },
+  { minScore: 57, rank: "AS", className: "Ⅱ", step: 4, monthlySalary: 522000 },
+  { minScore: 56, rank: "AS", className: "Ⅱ", step: 3, monthlySalary: 518000 },
+  { minScore: 55, rank: "AS", className: "Ⅱ", step: 2, monthlySalary: 514000 },
+  { minScore: 54, rank: "AS", className: "Ⅱ", step: 1, monthlySalary: 510000 },
+  { minScore: 53, rank: "AS", className: "Ⅰ", step: 5, monthlySalary: 501000 },
+  { minScore: 52, rank: "AS", className: "Ⅰ", step: 4, monthlySalary: 497000 },
+  { minScore: 51, rank: "AS", className: "Ⅰ", step: 3, monthlySalary: 493000 },
+  { minScore: 50, rank: "AS", className: "Ⅰ", step: 2, monthlySalary: 489000 },
+  { minScore: 49, rank: "AS", className: "Ⅰ", step: 1, monthlySalary: 485000 },
+  { minScore: 48, rank: "CS", className: "Ⅲ", step: 5, monthlySalary: 470000 },
+  { minScore: 47, rank: "CS", className: "Ⅲ", step: 4, monthlySalary: 466000 },
+  { minScore: 46, rank: "CS", className: "Ⅲ", step: 3, monthlySalary: 462000 },
+  { minScore: 45, rank: "CS", className: "Ⅲ", step: 2, monthlySalary: 458000 },
+  { minScore: 44, rank: "CS", className: "Ⅲ", step: 1, monthlySalary: 454000 },
+  { minScore: 43, rank: "CS", className: "Ⅱ", step: 5, monthlySalary: 446000 },
+  { minScore: 42, rank: "CS", className: "Ⅱ", step: 4, monthlySalary: 442000 },
+  { minScore: 41, rank: "CS", className: "Ⅱ", step: 3, monthlySalary: 438000 },
+  { minScore: 40, rank: "CS", className: "Ⅱ", step: 2, monthlySalary: 434000 },
+  { minScore: 39, rank: "CS", className: "Ⅱ", step: 1, monthlySalary: 430000 },
+  { minScore: 38, rank: "CS", className: "Ⅱ", step: 5, monthlySalary: 422000 },
+  { minScore: 37, rank: "CS", className: "Ⅱ", step: 4, monthlySalary: 418000 },
+  { minScore: 36, rank: "CS", className: "Ⅱ", step: 3, monthlySalary: 414000 },
+  { minScore: 35, rank: "CS", className: "Ⅱ", step: 2, monthlySalary: 410000 },
+  { minScore: 34, rank: "CS", className: "Ⅱ", step: 1, monthlySalary: 406000 },
+  { minScore: 33, rank: "CS", className: "Ⅰ", step: 5, monthlySalary: 398000 },
+  { minScore: 32, rank: "CS", className: "Ⅰ", step: 4, monthlySalary: 394000 },
+  { minScore: 31, rank: "CS", className: "Ⅰ", step: 3, monthlySalary: 390000 },
+  { minScore: 30, rank: "CS", className: "Ⅰ", step: 2, monthlySalary: 386000 },
+  { minScore: 29, rank: "CS", className: "Ⅰ", step: 1, monthlySalary: 382000 },
+  { minScore: 28, rank: "CS", className: "Ⅰ", step: 5, monthlySalary: 374000 },
+  { minScore: 27, rank: "CS", className: "Ⅰ", step: 4, monthlySalary: 370000 },
+  { minScore: 26, rank: "CS", className: "Ⅰ", step: 3, monthlySalary: 366000 },
+  { minScore: 25, rank: "CS", className: "Ⅰ", step: 2, monthlySalary: 362000 },
+  { minScore: 24, rank: "CS", className: "Ⅰ", step: 1, monthlySalary: 358000 },
+  { minScore: 23, rank: "CS", className: "Ⅰ", step: 5, monthlySalary: 350000 },
+  { minScore: 22, rank: "CS", className: "Ⅰ", step: 4, monthlySalary: 346000 },
+  { minScore: 21, rank: "CS", className: "Ⅰ", step: 3, monthlySalary: 342000 },
+  { minScore: 20, rank: "CS", className: "Ⅰ", step: 2, monthlySalary: 338000 },
+  { minScore: 0,  rank: "CS", className: "Ⅰ", step: 1, monthlySalary: 334000 },
+];
+
+const TOP_SCORE = 63;
+const BAND_SPAN = 12; // MIN = MAX - 12（帯は計13セル）
+
+function salaryForScore(score) {
+  let best = null;
+  for (const g of SALARY_GRADES) {
+    if (g.minScore <= score && (best === null || g.minScore > best.minScore)) best = g;
+  }
+  return best ? best.monthlySalary : 0;
+}
+const yen = (n) => n.toLocaleString("ja-JP");
+
+// ===== デモ社員（ハードコード） =====
+// MAX = 最終評価点（役員結論計×テスト係数 + 部門B + スキルB）。grayed は役員評価未確定。
+const employees = [
+  {
+    userId: "u-watanabe", name: "渡辺 健", dept: "パチンコ", grayed: false,
+    maxScore: 56, competencyTotal: 50, testCoef: 1.0, deptBonus: 6, skillBonus: 0,
+    decided: 56, confirmed: false,
+  },
+  {
+    userId: "u-suzuki", name: "鈴木 花子", dept: "飲食", grayed: false,
+    maxScore: 44, competencyTotal: 41, testCoef: 1.0, deptBonus: 3, skillBonus: 0,
+    decided: 44, confirmed: false,
+  },
+  {
+    userId: "u-yamada", name: "山田 太郎", dept: "パチンコ", grayed: true,
+    maxScore: null, competencyTotal: 0, testCoef: 0.2, deptBonus: 6, skillBonus: 0,
+    decided: null, confirmed: false,
+  },
+  {
+    userId: "u-sato", name: "佐藤 一郎", dept: "管理", grayed: true,
+    maxScore: null, competencyTotal: 0, testCoef: 0.2, deptBonus: 0, skillBonus: 0,
+    decided: null, confirmed: false,
+  },
+];
+
+let floorScore = 19;
+
+function bandBottomOf(emp) {
+  if (emp.grayed || emp.maxScore == null) return null;
+  return Math.max(emp.maxScore - BAND_SPAN, floorScore);
+}
+function clampDecided(emp) {
+  if (emp.grayed || emp.maxScore == null) { emp.decided = null; return; }
+  const bottom = bandBottomOf(emp);
+  if (emp.decided == null) emp.decided = emp.maxScore;
+  emp.decided = Math.min(emp.maxScore, Math.max(bottom, emp.decided));
+}
+
+function visibleEmployees() {
+  const dept = document.getElementById("dept").value;
+  return dept ? employees.filter((e) => e.dept === dept) : employees;
+}
+
+function setError(msg) { document.getElementById("err").textContent = msg || ""; }
+
+function applyFloor() {
+  const v = parseInt(document.getElementById("floor").value, 10);
+  if (isNaN(v) || v < 1 || v > TOP_SCORE) { setError("最下点は1〜63で入力してください。"); return; }
+  setError("");
+  floorScore = v;
+  employees.forEach(clampDecided);
+  render();
+}
+
+function selectCell(emp, score) {
+  if (emp.grayed || emp.confirmed) return;
+  const bottom = bandBottomOf(emp);
+  if (bottom == null || score > emp.maxScore || score < bottom) return;
+  emp.decided = score;
+  setError("");
+  render();
+}
+
+function toggleConfirm(emp) {
+  if (emp.grayed) return;
+  if (!emp.confirmed) {
+    clampDecided(emp);
+    if (emp.decided == null) { setError("〇が選択されていません。"); return; }
+  }
+  emp.confirmed = !emp.confirmed;
+  setError("");
+  render();
+}
+
+function render() {
+  employees.forEach(clampDecided);
+  const emps = visibleEmployees();
+  const table = document.getElementById("matrix");
+
+  // 統計
+  const confirmedCount = emps.filter((e) => e.confirmed).length;
+  const grayedCount = emps.filter((e) => e.grayed).length;
+  document.getElementById("stats").innerHTML =
+    `<span>対象 ${emps.length}名</span>` +
+    `<span>確定 ${confirmedCount}名</span>` +
+    (grayedCount ? `<span class="amber">役員評価未確定 ${grayedCount}名</span>` : "");
+
+  // ヘッダ
+  let thead = `<thead><tr>`;
+  thead += `<th class="col-salary">月給額</th>`;
+  for (const e of emps) {
+    const sub = e.grayed
+      ? `<div class="emp-sub amber">役員評価未確定</div>`
+      : `<div class="emp-sub">MAX ${e.maxScore}／〇 ${e.decided}</div>`;
+    thead += `<th class="emp-col ${e.grayed ? "grayed" : ""}">` +
+      `<div class="emp-name ${e.grayed ? "grayed" : ""}">${e.name}</div>` +
+      `<div class="emp-sub">${e.dept}</div>${sub}</th>`;
+  }
+  thead += `<th class="col-max">MAX</th><th class="col-min">MIN</th>`;
+  thead += `</tr></thead>`;
+
+  // 本体（63 → floor）
+  let tbody = `<tbody>`;
+  for (let s = TOP_SCORE; s >= floorScore; s--) {
+    tbody += `<tr>`;
+    tbody += `<td class="col-salary">${yen(salaryForScore(s))}円</td>`;
+    for (const e of emps) {
+      const bottom = bandBottomOf(e);
+      const inBand = !e.grayed && bottom != null && s <= e.maxScore && s >= bottom;
+      const isDecided = !e.grayed && e.decided === s;
+      const clickable = inBand && !e.confirmed;
+      const cls = ["cell"];
+      if (e.grayed) cls.push("gray");
+      if (inBand) cls.push("band");
+      if (clickable) cls.push("clickable");
+      const mark = isDecided && inBand
+        ? `<span class="mark ${e.confirmed ? "confirmed" : ""}">○</span>` : "";
+      const onclick = clickable ? ` onclick="selectCell(window.__byId['${e.userId}'], ${s})"` : "";
+      tbody += `<td class="${cls.join(" ")}"${onclick}>${mark}</td>`;
+    }
+    tbody += `<td class="col-max">${s}</td>`;
+    tbody += `<td class="col-min">${s - BAND_SPAN}</td>`;
+    tbody += `</tr>`;
+  }
+  tbody += `</tbody>`;
+
+  // フッタ（確定ボタン）
+  let tfoot = `<tfoot><tr>`;
+  tfoot += `<td class="col-salary">確定</td>`;
+  for (const e of emps) {
+    if (e.grayed) {
+      tfoot += `<td class="emp-col">—</td>`;
+    } else {
+      const tag = e.confirmed ? `<span class="confirmed-tag">確定済（${yen(salaryForScore(e.decided))}円）</span>` : "";
+      const label = e.confirmed ? "確定解除" : "確定";
+      const variant = e.confirmed ? "outline" : "";
+      tfoot += `<td class="emp-col">${tag}` +
+        `<button class="${variant}" onclick="toggleConfirm(window.__byId['${e.userId}'])">${label}</button></td>`;
+    }
+  }
+  tfoot += `<td class="col-max"></td><td class="col-min"></td>`;
+  tfoot += `</tr></tfoot>`;
+
+  table.innerHTML = thead + tbody + tfoot;
+}
+
+// id 参照（onclick から引けるように）
+window.__byId = Object.fromEntries(employees.map((e) => [e.userId, e]));
+window.selectCell = selectCell;
+window.toggleConfirm = toggleConfirm;
+window.applyFloor = applyFloor;
+window.render = render;
+
+render();
+</script>
+</body>
+</html>
